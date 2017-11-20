@@ -1,0 +1,273 @@
+<section>
+
+<h2>LXC (LXD) について</h2>
+<p>roid123</p>
+
+<p>2017/09/28</p>
+
+<aside class="notes">
+
+<p>s キーで発表者用ノートを開ける<br>
+今日は、プログラミング初学者によく気をつけろと指導するバッファオーバーフローについて、<br>
+実際にどういう危険があるのか、というところをお話ししたいと思います。</p>
+
+</aside>
+
+</section>
+<section>
+
+<h3>LXC とは</h3>
+<ul>
+  <li>Docker や systemd-nspawn と並べられるコンテナ型仮想化技術</li>
+  <li>Linux コンテナを管理するためのコマンドラインインタフェースを提供
+    <ul>
+      <li>API (C、あるいは Python 等のバインディング) も公開されている</li>
+    </ul>
+  </li>
+  <li>ホスト OS は Ubuntu が推奨されている (Arch Linux でも利用可能)</li>
+</ul>
+
+<aside class="notes">
+
+</aside>
+
+</section>
+<section>
+
+<h3>LXD とは</h3>
+<ul>
+  <li>LXC をラップしたもの
+    <ul>
+      <li>より使いやすいコマンドラインインタフェースを提供</li>
+      <li>REST API も提供</li>
+    </ul>
+  </li>
+</ul>
+
+<aside class="notes">
+
+</aside>
+
+</section>
+<section>
+
+<h3>LXD を触ろうと思ったきっかけ</h3>
+<ul>
+  <li>Docker は 1 コンテナ 1 アプリケーションの思想
+    <ul>
+      <li>本来は better VM として使うべきではない</li>
+      <li>systemd 周りの扱いが面倒</li>
+    </ul>
+  </li>
+  <li>systemd-nspawn は強力な chroot のようなもの
+    <ul>
+      <li>machinectl で CLI によるコンテナ操作が可能</li>
+      <li>ディレクトリにベースシステムをインストールする必要があり、取り回しが面倒
+        <ul>
+          <li>debootstrap, pactrap, dnf, …</li>
+        </ul>
+      </li>
+      <li>ネットワーク周りも面倒</li>
+    </ul>
+  </li>
+</ul>
+
+<aside class="notes">
+
+</aside>
+
+</section>
+<section>
+
+<h3>LXD だとどうなる?</h3>
+<ul>
+  <li>イメージからコンテナを生成するのは Docker と同様</li>
+  <li>イメージは <a href="https://uk.images.linuxcontainers.org/">image server</a> から取得可能
+    <ul>
+      <li>Ubuntu は専用のイメージサーバあり</li>
+    </ul>
+  </li>
+  <li>デフォルトでは専用のプライベートネットワーク内で立ち上がる</li>
+  <li>ポートフォワード機能は (LXD としては) 提供していない
+    <ul>
+      <li>ブリッジ接続するか、ssh ポートフォワードを使うことになる</li>
+    </ul>
+  </li>
+</ul>
+
+<aside class="notes">
+
+</aside>
+
+</section>
+<section>
+
+<h3>注意点</h3>
+<ul>
+  <li>デフォルトでは User Namespace という機能を使用するため、kernel で <code>CONFIG_USER_NS</code> を有効にする必要がある
+    <ul>
+      <li>Arch の場合はこれを有効にして kernel を自前でビルドする必要あり</li>
+    </ul>
+  </li>
+  <li>User Namespace を使用しないで利用することも可能
+    <ul>
+      <li>今回はお試しなのでこちらを採用</li>
+    </ul>
+  </li>
+</ul>
+
+</section>
+<section>
+
+<h3>実例</h3>
+<ul>
+  <li>初期化とコンテナ作成
+    <ul>
+      <li>
+<code>-c security.privileged=true</code> が User Namespace なしで起動するために必要となるオプション</li>
+    </ul>
+  </li>
+</ul>
+
+<pre><code>$ lxd init
+Do you want to configure a new storage pool (yes/no) [default=yes]?
+Name of the new storage pool [default=default]:
+Name of the storage backend to use (dir, lvm) [default=dir]:
+Would you like LXD to be available over the network (yes/no) [default=no]?
+Would you like stale cached images to be updated automatically (yes/no) [default=yes]?
+Would you like to create a new network bridge (yes/no) [default=yes]?
+What should the new bridge be called [default=lxdbr0]?
+What IPv4 address should be used (CIDR subnet notation, “auto” or “none”) [default=auto]?
+What IPv6 address should be used (CIDR subnet notation, “auto” or “none”) [default=auto]?
+LXD has been successfully configured.
+
+$ lxc launch images:centos/7/amd64 centos7 -c security.privileged=true
+Creating centos7
+Starting centos7
+</code></pre>
+
+<aside class="notes">
+
+</aside>
+
+</section>
+<section>
+
+<ul>
+  <li>コンテナ確認</li>
+</ul>
+
+<pre><code>$ lxc list
++---------+---------+---------------------+-----------------------------------------------+------------+-----------+
+|  NAME   |  STATE  |        IPV4         |                     IPV6                      |    TYPE    | SNAPSHOTS |
++---------+---------+---------------------+-----------------------------------------------+------------+-----------+
+| centos7 | RUNNING | 10.129.21.22 (eth0) | fd42:cbf5:cc58:ab63:216:3eff:fe4b:7cfa (eth0) | PERSISTENT | 0         |
++---------+---------+---------------------+-----------------------------------------------+------------+-----------+
+
+$ lxc exec centos7 bash
+[root@centos7 ~]# echo $SHELL
+/bin/bash
+[root@centos7 ~]#
+</code></pre>
+
+<ul>
+  <li>ファイルコピー</li>
+</ul>
+
+<pre><code>$ ls
+authorized_keys  build_lxd.sh  build.sh*
+
+$ lxc file push * centos7/root/
+
+$ lxc exec centos7 ls
+authorized_keys  build.sh  build_lxd.sh
+</code></pre>
+
+</section>
+<section>
+
+<ul>
+  <li>イメージの作成</li>
+</ul>
+
+<pre><code>$ lxc exec centos7 bash
+# パッケージをインストールするなど行う
+
+$ lxc stop centos7
+$ lxc publish centos7 --alias=centos7
+Container published with fingerprint: ab42311372f6b89a756e9b7b1dc9710ef1b387a813f76ef9159948a6e0dfdaa6
+
+$ lxc image list
++----------------+--------------+--------+---------------------------------+--------+----------+------------------------------+
+|     ALIAS      | FINGERPRINT  | PUBLIC |           DESCRIPTION           |  ARCH  |   SIZE   |         UPLOAD DATE          |
++----------------+--------------+--------+---------------------------------+--------+----------+------------------------------+
+| centos7 | ab42311372f6 | no     |                                 | x86_64 | 859.67MB | Sep 21, 2017 at 5:09am (UTC) |
++----------------+--------------+--------+---------------------------------+--------+----------+------------------------------+
+|                | 6d3a120793b3 | no     | Centos 7 amd64 (20170920_02:16) | x86_64 | 82.22MB  | Sep 21, 2017 at 2:04am (UTC) |
++----------------+--------------+--------+---------------------------------+--------+----------+------------------------------+
+
+</code></pre>
+
+</section>
+<section>
+
+<h3>試していない機能</h3>
+<ul>
+  <li>ネットワーク周り
+    <ul>
+      <li>固定 IP 割り振りやブリッジなども設定可能らしい</li>
+    </ul>
+  </li>
+  <li>ライブマイグレーション
+    <ul>
+      <li>実験的機能らしい?</li>
+    </ul>
+  </li>
+  <li>コンテナ単位のリソース制限</li>
+</ul>
+
+</section>
+<section>
+
+<h3>所感</h3>
+<ul>
+  <li>docker run ほど高速には動かない
+    <ul>
+      <li>特に lxc publish したようなイメージから launch する場合は遅い
+        <ul>
+          <li>一度コンテナができれば停止/再起動は高速</li>
+        </ul>
+      </li>
+      <li>コンテナのコピーもできるが、やはり時間がかかる
+        <ul>
+          <li>使用感は VM に近い</li>
+        </ul>
+      </li>
+    </ul>
+  </li>
+  <li>ホストとリソースを共有できるのが vagrant と比較した優位性?</li>
+</ul>
+
+<!--
+  disable uppercase
+  via. http://srz-zumix.blogspot.jp/2014/09/revealjs-markdown.html
+-->
+<style type="text/css">
+    .reveal h1,
+    .reveal h2,
+    .reveal h3,
+    .reveal h4,
+    .reveal h5,
+    .reveal h6 {
+      text-transform: none;
+    }
+</style>
+
+<!--
+<span style="color:red">red text</span>
+<span style="font-size:small">small text</span>
+<span style="font-size:normal; float: left">[2] [GitHub - jedcn/reveal-ck](<a href="https://github.com/jedcn/reveal-ck">https://github.com/jedcn/reveal-ck</a>)</span>
+<span style="font-size:normal; float: left">[3] [GitHub - hakimel/reveal.js](<a href="https://github.com/hakimel/reveal.js/">https://github.com/hakimel/reveal.js/</a>)</span>
+-->
+
+</section>
